@@ -4,15 +4,26 @@ import pandas as pd
 from PIL import Image
 import io
 
-# 1. CONFIGURAZIONE PAGINA (Stile compatto per Smartphone)
+# 1. CONFIGURAZIONE PAGINA PER SMARTPHONE
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
+
+# Trucco CSS per eliminare tutti gli spazi vuoti inutili di Streamlit e compattare lo schermo
+st.markdown("""
+    <style>
+        .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+        h1 { font-size: 24px !important; margin-bottom: 10px !important; }
+        .stButton > button { padding: 2px 10px !important; font-size: 14px !important; height: auto !important; min-height: 0px !important; }
+        hr { margin: 4px 0px !important; border-color: #dddddd !important; }
+        p { margin: 0px !important; padding: 0px !important; }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("🛒 La Nostra Spesa")
 
 # 2. CONNESSIONE AL DATABASE NATIVO
 conn = sqlite3.connect("spesa_condivisa.db", check_same_thread=False)
 c = conn.cursor()
 
-# Creazione tabella
 c.execute('''
     CREATE TABLE IF NOT EXISTS lista_spesa (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,19 +35,16 @@ c.execute('''
 ''')
 conn.commit()
 
-# 3. TRUCCO PER PULIRE IL CAMPO DOPO L'INVIO
+# 3. INTERFACCIA DI INSERIMENTO
 if "contatore_invii" not in st.session_state:
     st.session_state["contatore_invii"] = 0
 
-# Generiamo una chiave unica che cambia ogni volta che inserisci un prodotto
 chiave_testo = f"prodotto_{st.session_state['contatore_invii']}"
 chiave_foto = f"foto_{st.session_state['contatore_invii']}"
 
-# Interfaccia di inserimento sempre aperta in alto (senza macro-form bloccanti)
 nuovo_prodotto = st.text_input("➕ Aggiungi un elemento e premi Invio", key=chiave_testo)
 foto_file = st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"], key=chiave_foto, label_visibility="collapsed")
 
-# Se l'utente preme il pulsante visibile o preme Invio sulla tastiera
 if st.button("Inserisci in lista") or (nuovo_prodotto and nuovo_prodotto.strip() != ""):
     testo_pulito = nuovo_prodotto.strip()
     if testo_pulito:
@@ -47,29 +55,24 @@ if st.button("Inserisci in lista") or (nuovo_prodotto and nuovo_prodotto.strip()
             image.save(img_byte_arr, format='JPEG', quality=60)
             foto_bytes = img_byte_arr.getvalue()
         
-        # Inserimento singolo nel database
-        c.execute(
-            "INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)",
-            (testo_pulito, "", foto_bytes)
-        )
+        c.execute("INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)", (testo_pulito, "", foto_bytes))
         conn.commit()
-        
-        # Facciamo scattare il contatore: questo resetta all'istante i campi di testo in alto!
         st.session_state["contatore_invii"] += 1
         st.rerun()
 
-st.markdown("---")
+st.markdown("<hr>", unsafe_allow_html=True)
 
-# 4. LISTA PRINCIPALE: DA COMPRARE (Stile compatto Alexa)
+# 4. LISTA PRINCIPALE: DA COMPRARE (Stile ultra-compatto Alexa)
 prodotti_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", conn)
 
-if productos_vuoto := prodotti_df.empty:
-    st.info("Nessun elemento rimanente. La lista è vuota!")
+if prodotti_df.empty:
+    st.info("La lista è vuota!")
 else:
     st.caption(f"{len(prodotti_df)} elementi rimanenti")
     
     for index, row in prodotti_df.iterrows():
-        col_spunta, col_testo, col_foto = st.columns([0.15, 0.65, 0.20])
+        # Colonne strettissime per far stare tutto su una riga sola sul telefono
+        col_spunta, col_testo, col_foto = st.columns([0.12, 0.73, 0.15])
         
         with col_spunta:
             if st.button("⬜", key=f"check_{row['id']}"):
@@ -78,7 +81,8 @@ else:
                 st.rerun()
                 
         with col_testo:
-            st.markdown(f"<p style='font-size:18px; margin:0; padding-top:5px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
+            # Scritta a dimensione ridotta e allineata perfettamente al quadratino
+            st.markdown(f"<p style='font-size:16px; font-weight:500; padding-top:4px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
             
         with col_foto:
             if row['foto']:
@@ -86,17 +90,17 @@ else:
                     image = Image.open(io.BytesIO(row['foto']))
                     st.image(image, use_container_width=True)
         
-        st.markdown("<hr style='margin:2px 0px; border-color:#eeeeee;'>", unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
 
 # 5. STORICO: ELEMENTI GIÀ PRESI
 st.markdown("### 📋 Elementi già presi")
-storico_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 20", conn)
+storico_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 15", conn)
 
 if storico_df.empty:
     st.caption("Nessun elemento nello storico.")
 else:
     for index, row in storico_df.iterrows():
-        col_ripristina, col_testo_spuntato = st.columns([0.15, 0.85])
+        col_ripristina, col_testo_spuntato = st.columns([0.12, 0.88])
         
         with col_ripristina:
             if st.button("🔄", key=f"uncheck_{row['id']}"):
@@ -105,12 +109,14 @@ else:
                 st.rerun()
                 
         with col_testo_spuntato:
-            st.markdown(f"<p style='font-size:16px; text-decoration: line-through; color: gray; margin:0; padding-top:5px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size:15px; text-decoration: line-through; color: #888888; padding-top:4px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
+        
+        st.markdown("<hr>", unsafe_allow_html=True)
 
 # 6. PULIZIA TOTALE DELLO STORICO
-st.markdown("---")
-if st.button("🗑️ Cancella definitivamente lo storico"):
-    c.execute("DELETE FROM lista_spesa WHERE preso = 1")
-    conn.commit()
-    st.success("Storico svuotato!")
-    st.rerun()
+if not storico_df.empty:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🗑️ Cancella definitivamente lo storico"):
+        c.execute("DELETE FROM lista_spesa WHERE preso = 1")
+        conn.commit()
+        st.rerun()
