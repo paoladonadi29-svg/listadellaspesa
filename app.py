@@ -1,18 +1,19 @@
 import streamlit as st
+import sqlite3
 import pandas as pd
 from PIL import Image
 import io
-from st_sqlite_connection import SQLiteConnection
 
 # 1. CONFIGURAZIONE PAGINA PER SMARTPHONE
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 st.title("🛒 La Nostra Spesa")
 
-# 2. CONNESSIONE AL DATABASE LOCALE SICURO
-conn = st.connection('spesa_db', type=SQLiteConnection)
+# 2. CONNESSIONE AL DATABASE NATIVO (Zero librerie esterne)
+conn = sqlite3.connect("spesa_condivisa.db", check_same_thread=False)
+c = conn.cursor()
 
-# Creazione tabella se non esiste
-conn.execute('''
+# Creazione tabella
+c.execute('''
     CREATE TABLE IF NOT EXISTS lista_spesa (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         prodotto TEXT,
@@ -21,13 +22,14 @@ conn.execute('''
         preso INTEGER DEFAULT 0
     )
 ''')
+conn.commit()
 
 # 3. INTERFACCIA: INSERIMENTO NUOVO PRODOTTO
 with st.expander("➕ Aggiungi un prodotto alla lista", expanded=False):
     nuovo_prodotto = st.text_input("Nome Prodotto")
     categoria = st.selectbox("Categoria", ["Frigo", "Dispensa", "Ortofrutta", "Panetteria", "Igiene/Casa", "Altro"])
     
-    # Questo attiva la fotocamera sullo smartphone
+    # Attiva la fotocamera sullo smartphone
     foto_file = st.file_uploader("Scatta una foto al prodotto", type=["png", "jpg", "jpeg"])
     
     if st.button("Inserisci nella lista"):
@@ -39,17 +41,18 @@ with st.expander("➕ Aggiungi un prodotto alla lista", expanded=False):
                 image.save(img_byte_arr, format='JPEG', quality=60)
                 foto_bytes = img_byte_arr.getvalue()
             
-            conn.execute(
-                "INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (:prodotto, :categoria, :foto)",
-                {"prodotto": nuovo_prodotto, "categoria": categoria, "foto": foto_bytes}
+            c.execute(
+                "INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)",
+                (nuovo_prodotto, categoria, foto_bytes)
             )
+            conn.commit()
             st.success(f"'{nuovo_prodotto}' aggiunto!")
             st.rerun()
 
 st.markdown("---")
 
 # 4. INTERFACCIA: VISUALIZZAZIONE
-prodotti_df = conn.query("SELECT * FROM lista_spesa WHERE preso = 0")
+prodotti_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 0", conn)
 
 if prodotti_df.empty:
     st.info("La lista è vuota!")
@@ -67,11 +70,13 @@ else:
                     st.image(image, use_container_width=True)
                 
                 if st.button("✅ Preso", key=f"btn_{row['id']}"):
-                    conn.execute("UPDATE lista_spesa SET preso = 1 WHERE id = :id", {"id": row['id']})
+                    c.execute("UPDATE lista_spesa SET preso = 1 WHERE id = ?", (row['id'],))
+                    conn.commit()
                     st.rerun()
 
 # 5. PULIZIA
 st.markdown("---")
 if st.button("🗑️ Svuota prodotti presi"):
-    conn.execute("DELETE FROM lista_spesa WHERE preso = 1")
+    c.execute("DELETE FROM lista_spesa WHERE preso = 1")
+    conn.commit()
     st.rerun()
