@@ -37,33 +37,36 @@ c.execute('''
 conn.commit()
 
 # 3. INTERFACCIA DI INSERIMENTO: MODULO NATIVO
-# "clear_on_submit=True" svuota la casella di testo e la foto automaticamente senza errori
 with st.form(key="inserimento_rapido", clear_on_submit=True):
     nuovo_prodotto = st.text_input("➕ Aggiungi un elemento e premi Invio")
     foto_file = st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"])
     
-    # Questo bottone fa funzionare nativamente il tasto "Invio" della tastiera
     inviato = st.form_submit_button("Inserisci in lista")
 
-# Se premiamo il tasto o premiamo Invio dalla tastiera
 if inviato:
     testo_pulito = nuovo_prodotto.strip()
     if testo_pulito:
         foto_bytes = None
         if foto_file is not None:
             image = Image.open(foto_file)
+            
+            # --- CORREZIONE ERRORE FOTO ---
+            # Se la foto ha trasparenze (RGBA) o tavolozze (P), la convertiamo in RGB classico
+            if image.mode in ("RGBA", "P"):
+                image = image.convert("RGB")
+            # ------------------------------
+                
             img_byte_arr = io.BytesIO()
             image.save(img_byte_arr, format='JPEG', quality=60)
             foto_bytes = img_byte_arr.getvalue()
         
-        # Ora salva contemporaneamente sia il testo che la foto nel database!
         c.execute("INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)", (testo_pulito, "", foto_bytes))
         conn.commit()
         st.rerun()
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# 4. LISTA PRINCIPALE: DA COMPRARE (Stile ultra-compatto Alexa)
+# 4. LISTA PRINCIPALE: DA COMPRARE
 prodotti_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", conn)
 
 if prodotti_df.empty:
@@ -84,7 +87,6 @@ else:
             st.markdown(f"<p style='font-size:16px; font-weight:500; padding-top:4px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
             
         with col_foto:
-            # L'icona compare SOLO se la foto è stata salvata correttamente
             if row['foto']:
                 with st.popover("📷"):
                     image = Image.open(io.BytesIO(row['foto']))
