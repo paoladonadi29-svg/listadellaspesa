@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 from PIL import Image, ImageOps
 import io
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 # 1. CONFIGURAZIONE PAGINA
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 
-# CSS: Griglia perfetta e ottimizzata per i bottoni rapidi
+# CSS: Griglia rigida e pulita per smartphone
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; max-width: 100% !important; overflow-x: hidden !important; }
@@ -26,7 +26,7 @@ st.markdown("""
         
         [data-testid="column"] { width: 100% !important; min-width: 0 !important; padding: 0 !important; }
 
-        /* Uniforma tutti i bottoni della griglia (sia spunta che fotocamera) */
+        /* Centratura e dimensione fissa dei bottoni rapidi */
         [data-testid="stHorizontalBlock"] .stButton > button {
             width: 38px !important; height: 35px !important; padding: 0 !important; margin: 0 auto !important;
             display: flex !important; align-items: center !important; justify-content: center !important;
@@ -38,14 +38,29 @@ st.markdown("""
 
 st.title("🛒 La Nostra Spesa")
 
-# 2. CONNESSIONE AL DATABASE CLOUD SUPABASE
-conn = st.connection("supabase", type="sql", url=st.secrets["DB_URL"])
+# 2. MOTORE DI CONNESIONE OTTIMIZZATO (Canale sempre caldo e veloce)
+@st.cache_resource
+def inizializza_motore():
+    # Crea una connessione che tiene i canali aperti ed evita i tempi morti di ricarica
+    motore = create_engine(
+        st.secrets["DB_URL"],
+        pool_size=10,          # Mantiene fino a 10 connessioni pronte all'uso
+        max_overflow=5,        # Gestisce i picchi di richiesta simultanei
+        pool_pre_ping=True,    # Verifica che il canale sia vivo prima di usarlo
+        pool_recycle=300       # Rigenera le connessioni vecchie in background
+    )
+    # Crea un indice nel database per rendere l'ordinamento istantaneo
+    with motore.connect() as s:
+        s.execute(text("CREATE INDEX IF NOT EXISTS idx_lista_spesa_preso_id ON lista_spesa (preso, id DESC);"))
+        s.commit()
+    return motore
 
-# --- FUNZIONE COMPLEMENTARE: MOSTRA FOTO ON-DEMAND (Scarica solo quando clicchi) ---
+engine = inizializza_motore()
+
+# --- MOSTRA FOTO SU RICHIESTA ---
 @st.dialog("📷 Foto Prodotto")
 def mostra_foto_popup(foto_id):
-    with conn.session as s:
-        # Scarica solo ed esclusivamente la foto cliccata
+    with engine.connect() as s:
         blob = s.execute(text("SELECT foto FROM lista_spesa WHERE id = :id"), {"id": foto_id}).scalar()
     if blob:
         image = Image.open(io.BytesIO(blob))
@@ -72,7 +87,7 @@ if inviato:
             image.save(img_byte_arr, format='JPEG', quality=60)
             foto_bytes = img_byte_arr.getvalue()
         
-        with conn.session as s:
+        with engine.connect() as s:
             s.execute(
                 text("INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (:prodotto, :categoria, :foto)"),
                 {"prodotto": testo_pulito, "categoria": "", "foto": foto_bytes}
@@ -82,8 +97,8 @@ if inviato:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# 4. LETTURA DATI ULTRA-RAPIDA (Non scarica le foto, verifica solo se esistono con 'ha_foto')
-with conn.session as s:
+# 4. LETTURA DATI IMMEDIATA (Senza scaricare i file pesanti delle foto)
+with engine.connect() as s:
     risultati_prodotti = s.execute(text(
         "SELECT id, prodotto, categoria, preso, (foto IS NOT NULL) AS ha_foto FROM lista_spesa WHERE preso = 0 ORDER BY id DESC"
     )).mappings().all()
@@ -105,7 +120,7 @@ else:
         
         with col_spunta:
             if st.button("⬜", key=f"check_{row['id']}"):
-                with conn.session as s:
+                with engine.connect() as s:
                     s.execute(text("UPDATE lista_spesa SET preso = 1 WHERE id = :id"), {"id": row['id']})
                     s.commit()
                 st.rerun()
@@ -114,10 +129,9 @@ else:
             st.markdown(f"<div style='font-size: 16px; font-weight: 500; line-height: 1.2; word-wrap: break-word; padding-top: 2px;'>{row['prodotto']}</div>", unsafe_allow_html=True)
             
         with col_foto:
-            # Se la foto esiste nel server, mostriamo il bottoncino
             if row['ha_foto']:
                 if st.button("📷", key=f"btn_foto_{row['id']}"):
-                    mostra_foto_popup(row['id']) # Attiva il popup e scarica la foto solo ora!
+                    mostra_foto_popup(row['id'])
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -132,7 +146,7 @@ else:
         
         with col_ripristina:
             if st.button("🔄", key=f"uncheck_{row['id']}"):
-                with conn.session as s:
+                with engine.connect() as s:
                     s.execute(text("UPDATE lista_spesa SET preso = 0 WHERE id = :id"), {"id": row['id']})
                     s.commit()
                 st.rerun()
@@ -142,11 +156,11 @@ else:
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
-# 7. PULIZIA
+# 7. PULIZIA TOTALE dello storico
 if not storico_df.empty:
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🗑️ Cancella definitivamente lo storico"):
-        with conn.session as s:
+        with engine.connect() as s:
             s.execute(text("DELETE FROM lista_spesa WHERE preso = 1"))
             s.commit()
         st.rerun()
