@@ -4,69 +4,48 @@ import pandas as pd
 from PIL import Image
 import io
 
-# 1. CONFIGURAZIONE PAGINA PER SMARTPHONE
+# 1. CONFIGURAZIONE PAGINA
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 
-# CSS: PERCENTUALI ESATTE PER BLOCCARE GLI ELEMENTI SULLO SCHERMO
+# CSS: LA GRIGLIA PERFETTA E RIGIDA PER GLI SMARTPHONE
 st.markdown("""
     <style>
-        /* Ottimizzazione degli spazi generali */
+        /* Pulizia generale */
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; max-width: 100% !important; overflow-x: hidden !important; }
         h1 { font-size: 24px !important; margin-bottom: 10px !important; }
         hr { margin: 4px 0px !important; border-color: rgba(128, 128, 128, 0.2) !important; }
         [data-testid="stForm"] { border: none !important; padding: 0 !important; }
         
-        /* Rimpicciolisce e uniforma tutti i bottoni (quadratino e fotocamera) */
-        .stButton > button, [data-testid="stPopover"] > button { 
-            padding: 0px !important; 
-            font-size: 16px !important; 
-            height: 35px !important; 
-            width: 100% !important; 
-        }
-        
-        /* =======================================================
-           LA MAGIA PER LO SCHERMO DEL TELEFONO (Percentuali fisse)
-           ======================================================= */
-        /* Obbliga Streamlit a restare in riga e a non allargarsi oltre lo schermo */
+        /* IL SEGRETO: Creiamo una griglia fissa (45px - Spazio centrale - 45px) */
         [data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            align-items: center !important;
+            display: grid !important;
+            grid-template-columns: 45px 1fr 45px !important;
+            gap: 0px !important;
             width: 100% !important;
+            align-items: center !important;
         }
         
-        /* Riduce a zero i margini interni delle colonne */
+        /* Diciamo alle colonne di ubbidire alla griglia */
         [data-testid="column"] {
-            padding: 0px 4px !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            padding: 0 !important;
         }
 
-        /* COLONNA 1: Il quadratino di spunta (15% dello schermo) */
-        [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(1) {
-            width: 15% !important;
-            min-width: 15% !important;
-            flex: 0 0 15% !important;
+        /* Forza i bottoncini (Quadratino e Fotocamera) a essere dei cubetti perfetti di 35x35 pixel */
+        [data-testid="stHorizontalBlock"] .stButton > button,
+        [data-testid="stHorizontalBlock"] [data-testid="stPopover"] > button {
+            width: 35px !important;
+            height: 35px !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }
         
-        /* COLONNA 2 (Lista Principale): Il testo del prodotto (70% dello schermo) */
-        [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2):not(:last-child) {
-            width: 70% !important;
-            min-width: 70% !important;
-            flex: 0 0 70% !important;
-        }
-        
-        /* COLONNA 3: L'icona della fotocamera (15% dello schermo) */
-        [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(3) {
-            width: 15% !important;
-            min-width: 15% !important;
-            flex: 0 0 15% !important;
-        }
-        
-        /* COLONNA 2 (Nello Storico): Il testo del prodotto (Prende l'85% perché manca la foto) */
-        [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2):last-child {
-            width: 85% !important;
-            min-width: 85% !important;
-            flex: 0 0 85% !important;
-        }
+        /* Mantiene il bottone principale "Inserisci" bello largo */
+        [data-testid="stFormSubmitButton"] > button { width: 100% !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -111,7 +90,7 @@ if inviato:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# 4. LISTA PRINCIPALE (Bloccata su un'unica riga)
+# 4. LISTA PRINCIPALE IN GRIGLIA
 prodotti_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", conn)
 
 if prodotti_df.empty:
@@ -120,8 +99,8 @@ else:
     st.caption(f"{len(prodotti_df)} elementi rimanenti")
     
     for index, row in prodotti_df.iterrows():
-        # Creiamo le colonne: il CSS le forzerà alle percentuali 15% - 70% - 15%
-        col_spunta, col_testo, col_foto = st.columns([0.15, 0.70, 0.15]) 
+        # Invochiamo 3 colonne: il CSS le metterà nei 3 slot perfetti della griglia
+        col_spunta, col_testo, col_foto = st.columns(3) 
         
         with col_spunta:
             if st.button("⬜", key=f"check_{row['id']}"):
@@ -130,8 +109,8 @@ else:
                 st.rerun()
                 
         with col_testo:
-            # Il padding-top aiuta ad allineare il testo perfettamente al centro del bottone
-            st.markdown(f"<div style='padding-top: 6px; font-size: 16px; font-weight: 500;'>{row['prodotto']}</div>", unsafe_allow_html=True)
+            # Testo pulito con a capo automatico se è troppo lungo
+            st.markdown(f"<div style='font-size: 16px; font-weight: 500; line-height: 1.2; word-wrap: break-word;'>{row['prodotto']}</div>", unsafe_allow_html=True)
             
         with col_foto:
             if row['foto']:
@@ -141,7 +120,7 @@ else:
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
-# 5. STORICO PRODOTTI GIÀ PRESI
+# 5. STORICO
 st.markdown("### 📋 Elementi già presi")
 storico_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 15", conn)
 
@@ -149,7 +128,8 @@ if storico_df.empty:
     st.caption("Nessun elemento nello storico.")
 else:
     for index, row in storico_df.iterrows():
-        col_ripristina, col_testo_spuntato = st.columns([0.15, 0.85])
+        # Qui ne usiamo solo 2, lo slot fotocamera resterà magicamente vuoto e perfetto
+        col_ripristina, col_testo_spuntato = st.columns(2)
         
         with col_ripristina:
             if st.button("🔄", key=f"uncheck_{row['id']}"):
@@ -158,11 +138,11 @@ else:
                 st.rerun()
                 
         with col_testo_spuntato:
-            st.markdown(f"<div style='padding-top: 6px; font-size: 15px; text-decoration: line-through; color: #888888;'>{row['prodotto']}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size: 15px; text-decoration: line-through; color: #888888; line-height: 1.2; word-wrap: break-word;'>{row['prodotto']}</div>", unsafe_allow_html=True)
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
-# 6. PULIZIA TOTALE
+# 6. PULIZIA
 if not storico_df.empty:
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🗑️ Cancella definitivamente lo storico"):
