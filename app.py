@@ -1,40 +1,36 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from PIL import Image
+from PIL import Image, ImageOps  # Aggiunto ImageOps per sistemare la rotazione!
 import io
 
 # 1. CONFIGURAZIONE PAGINA
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 
-# CSS: LA GRIGLIA PERFETTA E RIGIDA PER GLI SMARTPHONE
+# CSS: GRIGLIA RIGIDA E BOTTONI CENTRATI
 st.markdown("""
     <style>
-        /* Pulizia generale */
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; max-width: 100% !important; overflow-x: hidden !important; }
         h1 { font-size: 24px !important; margin-bottom: 10px !important; }
         hr { margin: 4px 0px !important; border-color: rgba(128, 128, 128, 0.2) !important; }
         [data-testid="stForm"] { border: none !important; padding: 0 !important; }
         
-        /* IL SEGRETO: Creiamo una griglia fissa (45px - Spazio centrale - 45px) */
         [data-testid="stHorizontalBlock"] {
             display: grid !important;
-            grid-template-columns: 45px 1fr 45px !important;
+            grid-template-columns: 40px 1fr 50px !important; /* Diamo 50px alla fotocamera per far respirare la freccina */
             gap: 0px !important;
             width: 100% !important;
             align-items: center !important;
         }
         
-        /* Diciamo alle colonne di ubbidire alla griglia */
         [data-testid="column"] {
             width: 100% !important;
             min-width: 0 !important;
             padding: 0 !important;
         }
 
-        /* Forza i bottoncini (Quadratino e Fotocamera) a essere dei cubetti perfetti di 35x35 pixel */
-        [data-testid="stHorizontalBlock"] .stButton > button,
-        [data-testid="stHorizontalBlock"] [data-testid="stPopover"] > button {
+        /* Quadratino di spunta centrato */
+        [data-testid="stHorizontalBlock"] .stButton > button {
             width: 35px !important;
             height: 35px !important;
             padding: 0 !important;
@@ -43,8 +39,18 @@ st.markdown("""
             align-items: center !important;
             justify-content: center !important;
         }
+
+        /* Bottone fotocamera centrato e con il giusto spazio */
+        [data-testid="stHorizontalBlock"] [data-testid="stPopover"] > button {
+            width: 45px !important;
+            height: 35px !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
         
-        /* Mantiene il bottone principale "Inserisci" bello largo */
         [data-testid="stFormSubmitButton"] > button { width: 100% !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -78,6 +84,11 @@ if inviato:
         foto_bytes = None
         if foto_file is not None:
             image = Image.open(foto_file)
+            
+            # 1. MAGIA DELLA ROTAZIONE: Raddrizza l'immagine in base a come tenevi il telefono
+            image = ImageOps.exif_transpose(image)
+            
+            # 2. Sistema trasparenze e salva
             if image.mode in ("RGBA", "P"):
                 image = image.convert("RGB")
             img_byte_arr = io.BytesIO()
@@ -99,7 +110,6 @@ else:
     st.caption(f"{len(prodotti_df)} elementi rimanenti")
     
     for index, row in prodotti_df.iterrows():
-        # Invochiamo 3 colonne: il CSS le metterà nei 3 slot perfetti della griglia
         col_spunta, col_testo, col_foto = st.columns(3) 
         
         with col_spunta:
@@ -109,8 +119,7 @@ else:
                 st.rerun()
                 
         with col_testo:
-            # Testo pulito con a capo automatico se è troppo lungo
-            st.markdown(f"<div style='font-size: 16px; font-weight: 500; line-height: 1.2; word-wrap: break-word;'>{row['prodotto']}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size: 16px; font-weight: 500; line-height: 1.2; word-wrap: break-word; padding-top: 2px;'>{row['prodotto']}</div>", unsafe_allow_html=True)
             
         with col_foto:
             if row['foto']:
@@ -128,7 +137,6 @@ if storico_df.empty:
     st.caption("Nessun elemento nello storico.")
 else:
     for index, row in storico_df.iterrows():
-        # Qui ne usiamo solo 2, lo slot fotocamera resterà magicamente vuoto e perfetto
         col_ripristina, col_testo_spuntato = st.columns(2)
         
         with col_ripristina:
@@ -138,7 +146,7 @@ else:
                 st.rerun()
                 
         with col_testo_spuntato:
-            st.markdown(f"<div style='font-size: 15px; text-decoration: line-through; color: #888888; line-height: 1.2; word-wrap: break-word;'>{row['prodotto']}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size: 15px; text-decoration: line-through; color: #888888; line-height: 1.2; word-wrap: break-word; padding-top: 2px;'>{row['prodotto']}</div>", unsafe_allow_html=True)
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
