@@ -7,18 +7,18 @@ import io
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 st.title("🛒 La Nostra Spesa")
 
-# 2. CONNESSIONE AL DATABASE CLOUD CONDIVISO
+# 2. CONNESSIONE AL DATABASE CONDIVISO
 conn = st.connection('tidy_spesa_db', type='sql')
 
 # Creazione tabella se non esiste
 with conn.session as session:
     session.execute('''
         CREATE TABLE IF NOT EXISTS lista_spesa (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            prodotto VARCHAR(255),
-            categoria VARCHAR(100),
-            foto LONGBLOB,
-            preso INT DEFAULT 0
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prodotto TEXT,
+            categoria TEXT,
+            foto BLOB,
+            preso INTEGER DEFAULT 0
         )
     ''')
     session.commit()
