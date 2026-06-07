@@ -36,7 +36,7 @@ st.markdown("""
 
 st.title("🛒 La Nostra Spesa")
 
-# 2. CONNESSIONE AL DATABASE CLOUD SUPABASE (Sicuro e permanente)
+# 2. CONNESSIONE AL DATABASE CLOUD SUPABASE
 conn = st.connection("supabase", type="sql", url=st.secrets["DB_URL"])
 
 # 3. INTERFACCIA DI INSERIMENTO
@@ -68,9 +68,16 @@ if inviato:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# 4. LISTA PRINCIPALE (Aggiornamento in tempo reale)
-prodotti_df = conn.query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", ttl=0)
+# --- LETTURA DATI DIRETTA (Senza blocchi di memoria) ---
+with conn.session as s:
+    risultati_prodotti = s.execute(text("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC")).mappings().all()
+    prodotti_df = pd.DataFrame(risultati_prodotti)
+    
+    risultati_storico = s.execute(text("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 15")).mappings().all()
+    storico_df = pd.DataFrame(risultati_storico)
+# --------------------------------------------------------
 
+# 4. LISTA PRINCIPALE
 if prodotti_df.empty:
     st.info("La lista è vuota!")
 else:
@@ -90,7 +97,8 @@ else:
             st.markdown(f"<div style='font-size: 16px; font-weight: 500; line-height: 1.2; word-wrap: break-word; padding-top: 2px;'>{row['prodotto']}</div>", unsafe_allow_html=True)
             
         with col_foto:
-            if row['foto']:
+            # Controllo di sicurezza per accertarsi che ci sia un'immagine
+            if row['foto'] is not None and len(row['foto']) > 0:
                 with st.popover("📷"):
                     image = Image.open(io.BytesIO(row['foto']))
                     st.image(image, use_container_width=True)
@@ -99,7 +107,6 @@ else:
 
 # 5. STORICO
 st.markdown("### 📋 Elementi già presi")
-storico_df = conn.query("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 15", ttl=0)
 
 if storico_df.empty:
     st.caption("Nessun elemento nello storico.")
@@ -119,7 +126,7 @@ else:
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
-# 6. PULIZIA
+# 6. PULIZIA TOTALE
 if not storico_df.empty:
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🗑️ Cancella definitivamente lo storico"):
