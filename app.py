@@ -1,13 +1,12 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
-from PIL import Image, ImageOps  # Aggiunto ImageOps per sistemare la rotazione!
+from PIL import Image, ImageOps
 import io
+from sqlalchemy import text
 
 # 1. CONFIGURAZIONE PAGINA
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 
-# CSS: GRIGLIA RIGIDA E BOTTONI CENTRATI
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; max-width: 100% !important; overflow-x: hidden !important; }
@@ -17,38 +16,18 @@ st.markdown("""
         
         [data-testid="stHorizontalBlock"] {
             display: grid !important;
-            grid-template-columns: 40px 1fr 50px !important; /* Diamo 50px alla fotocamera per far respirare la freccina */
+            grid-template-columns: 40px 1fr 50px !important;
             gap: 0px !important;
             width: 100% !important;
             align-items: center !important;
         }
         
-        [data-testid="column"] {
-            width: 100% !important;
-            min-width: 0 !important;
-            padding: 0 !important;
-        }
+        [data-testid="column"] { width: 100% !important; min-width: 0 !important; padding: 0 !important; }
 
-        /* Quadratino di spunta centrato */
-        [data-testid="stHorizontalBlock"] .stButton > button {
-            width: 35px !important;
-            height: 35px !important;
-            padding: 0 !important;
-            margin: 0 auto !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-        }
-
-        /* Bottone fotocamera centrato e con il giusto spazio */
+        [data-testid="stHorizontalBlock"] .stButton > button, 
         [data-testid="stHorizontalBlock"] [data-testid="stPopover"] > button {
-            width: 45px !important;
-            height: 35px !important;
-            padding: 0 !important;
-            margin: 0 auto !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
+            width: 35px !important; height: 35px !important; padding: 0 !important; margin: 0 auto !important;
+            display: flex !important; align-items: center !important; justify-content: center !important;
         }
         
         [data-testid="stFormSubmitButton"] > button { width: 100% !important; }
@@ -57,20 +36,8 @@ st.markdown("""
 
 st.title("🛒 La Nostra Spesa")
 
-# 2. CONNESSIONE AL DATABASE
-conn = sqlite3.connect("spesa_condivisa.db", check_same_thread=False)
-c = conn.cursor()
-
-c.execute('''
-    CREATE TABLE IF NOT EXISTS lista_spesa (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        prodotto TEXT,
-        categoria TEXT,
-        foto BLOB,
-        preso INTEGER DEFAULT 0
-    )
-''')
-conn.commit()
+# 2. CONNESSIONE AL DATABASE CLOUD SUPABASE (Sicuro e permanente)
+conn = st.connection("supabase", type="sql", url=st.secrets["DB_URL"])
 
 # 3. INTERFACCIA DI INSERIMENTO
 with st.form(key="inserimento_rapido", clear_on_submit=True):
@@ -84,25 +51,25 @@ if inviato:
         foto_bytes = None
         if foto_file is not None:
             image = Image.open(foto_file)
-            
-            # 1. MAGIA DELLA ROTAZIONE: Raddrizza l'immagine in base a come tenevi il telefono
             image = ImageOps.exif_transpose(image)
-            
-            # 2. Sistema trasparenze e salva
             if image.mode in ("RGBA", "P"):
                 image = image.convert("RGB")
             img_byte_arr = io.BytesIO()
             image.save(img_byte_arr, format='JPEG', quality=60)
             foto_bytes = img_byte_arr.getvalue()
         
-        c.execute("INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)", (testo_pulito, "", foto_bytes))
-        conn.commit()
+        with conn.session as s:
+            s.execute(
+                text("INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (:prodotto, :categoria, :foto)"),
+                {"prodotto": testo_pulito, "categoria": "", "foto": foto_bytes}
+            )
+            s.commit()
         st.rerun()
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# 4. LISTA PRINCIPALE IN GRIGLIA
-prodotti_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", conn)
+# 4. LISTA PRINCIPALE (Aggiornamento in tempo reale)
+prodotti_df = conn.query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", ttl=0)
 
 if prodotti_df.empty:
     st.info("La lista è vuota!")
@@ -114,8 +81,9 @@ else:
         
         with col_spunta:
             if st.button("⬜", key=f"check_{row['id']}"):
-                c.execute("UPDATE lista_spesa SET preso = 1 WHERE id = ?", (row['id'],))
-                conn.commit()
+                with conn.session as s:
+                    s.execute(text("UPDATE lista_spesa SET preso = 1 WHERE id = :id"), {"id": row['id']})
+                    s.commit()
                 st.rerun()
                 
         with col_testo:
@@ -131,7 +99,7 @@ else:
 
 # 5. STORICO
 st.markdown("### 📋 Elementi già presi")
-storico_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 15", conn)
+storico_df = conn.query("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 15", ttl=0)
 
 if storico_df.empty:
     st.caption("Nessun elemento nello storico.")
@@ -141,8 +109,9 @@ else:
         
         with col_ripristina:
             if st.button("🔄", key=f"uncheck_{row['id']}"):
-                c.execute("UPDATE lista_spesa SET preso = 0 WHERE id = ?", (row['id'],))
-                conn.commit()
+                with conn.session as s:
+                    s.execute(text("UPDATE lista_spesa SET preso = 0 WHERE id = :id"), {"id": row['id']})
+                    s.commit()
                 st.rerun()
                 
         with col_testo_spuntato:
@@ -154,6 +123,7 @@ else:
 if not storico_df.empty:
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🗑️ Cancella definitivamente lo storico"):
-        c.execute("DELETE FROM lista_spesa WHERE preso = 1")
-        conn.commit()
+        with conn.session as s:
+            s.execute(text("DELETE FROM lista_spesa WHERE preso = 1"))
+            s.commit()
         st.rerun()
