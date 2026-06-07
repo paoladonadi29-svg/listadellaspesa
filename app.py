@@ -24,36 +24,43 @@ c.execute('''
 ''')
 conn.commit()
 
-# 3. INTERFACCIA DI INSERIMENTO ULTRA-RAPIDA (Sempre aperta)
-# Usiamo un piccolo trucco per pulire il campo di testo dopo l'invio automatizzato
-if "temp_prodotto" not in st.session_state:
-    st.session_state["temp_prodotto"] = ""
-
-# Casella di inserimento sempre visibile in alto
-nuovo_prodotto = st.text_input("➕ Aggiungi un elemento e premi Invio", key="input_prodotto")
-
-# Campo fotocamera compatto e opzionale sotto il testo
-foto_file = st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
-
-# Funzione che scatta da sola quando premi Invio sulla tastiera del telefono
-if nuovo_prodotto and nuovo_prodotto != st.session_state["temp_prodotto"]:
-    foto_bytes = None
-    if foto_file is not None:
-        image = Image.open(foto_file)
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=60)
-        foto_bytes = img_byte_arr.getvalue()
+# 3. FUNZIONE DI INSERIMENTO PULITA (Evita i loop di doppioni)
+def inserisci_e_pulisci():
+    # Recuperiamo il testo scritto dall'utente
+    testo = st.session_state["nuovo_elemento"].strip()
+    foto_file = st.session_state["nuova_foto"]
     
-    c.execute(
-        "INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)",
-        (nuovo_prodotto, "", foto_bytes)
-    )
-    conn.commit()
-    st.rerun()
+    if testo:
+        foto_bytes = None
+        if foto_file is not None:
+            image = Image.open(foto_file)
+            img_byte_arr = io.BytesIO()
+            image.save(img_byte_arr, format='JPEG', quality=60)
+            foto_bytes = img_byte_arr.getvalue()
+        
+        # Inseriamo nel database UN SOLA VOLTA
+        c.execute(
+            "INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)",
+            (testo, "", foto_bytes)
+        )
+        conn.commit()
+        
+        # Svuotiamo i campi nella memoria di Streamlit prima del ricaricamento
+        st.session_state["nuovo_elemento"] = ""
+        st.session_state["nuova_foto"] = None
+
+# 4. INTERFACCIA DI INSERIMENTO RAPIDA (Dentro un form nativo)
+with st.form(key="modulo_inserimento", clear_on_submit=True):
+    # La casella di testo invia i dati direttamente quando premi Invio sulla tastiera del telefono
+    st.text_input("➕ Aggiungi un elemento e premi Invio", key="nuovo_elemento")
+    st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"], key="nuova_foto", label_visibility="collapsed")
+    
+    # Questo bottone nascosto serve a Streamlit per far funzionare il tasto Invio della tastiera
+    st.form_submit_button(label="Aggiungi", on_click=inserisci_e_pulisci)
 
 st.markdown("---")
 
-# 4. LISTA PRINCIPALE: DA COMPRARE (Stile compatto Alexa)
+# 5. LISTA PRINCIPALE: DA COMPRARE (Stile compatto Alexa)
 prodotti_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", conn)
 
 if prodotti_df.empty:
@@ -82,7 +89,7 @@ else:
         
         st.markdown("<hr style='margin:2px 0px; border-color:#eeeeee;'>", unsafe_allow_html=True)
 
-# 5. STORICO: ELEMENTI GIÀ PRESI
+# 6. STORICO: ELEMENTI GIÀ PRESI
 st.markdown("### 📋 Elementi già presi")
 storico_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 20", conn)
 
@@ -101,7 +108,7 @@ else:
         with col_testo_spuntato:
             st.markdown(f"<p style='font-size:16px; text-decoration: line-through; color: gray; margin:0; padding-top:5px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
 
-# 6. PULIZIA TOTALE DELLO STORICO
+# 7. PULIZIA TOTALE DELLO STORICO (E svuota i doppioni vecchi)
 st.markdown("---")
 if st.button("🗑️ Cancella definitivamente lo storico"):
     c.execute("DELETE FROM lista_spesa WHERE preso = 1")
