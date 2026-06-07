@@ -7,55 +7,47 @@ import io
 # 1. CONFIGURAZIONE PAGINA PER SMARTPHONE
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 
-# CSS: Trucchi per compattare e bloccare gli "a capo" sui telefoni
+# CSS: Codice corretto per mantenere TUTTO IN RIGA senza sfasare lo schermo
 st.markdown("""
     <style>
-        /* Tolgo margini inutili in alto e in basso */
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
         h1 { font-size: 24px !important; margin-bottom: 10px !important; }
-        
-        /* Rimpicciolisco i bottoni per farli stare comodamente in riga */
-        .stButton > button { padding: 2px 8px !important; font-size: 16px !important; height: auto !important; min-height: 0px !important; }
-        
-        /* Riga sottile per separare i prodotti (colore che sta bene sia su sfondo bianco che nero) */
+        .stButton > button, [data-testid="stPopover"] > button { padding: 2px 0px !important; font-size: 14px !important; height: auto !important; min-height: 30px !important; width: 100%; }
         hr { margin: 4px 0px !important; border-color: rgba(128, 128, 128, 0.3) !important; }
-        
-        /* Centratura verticale del testo del prodotto */
-        p { margin: 0px !important; padding: 0px !important; line-height: 1.6 !important; }
-        
-        /* Nascondo il bordo del form di inserimento in alto */
+        p { margin: 0px !important; padding: 0px !important; line-height: 1.3 !important; }
         [data-testid="stForm"] { border: none !important; padding: 0 !important; }
         
-        /* ==========================================================
-           MAGIA PER IMPEDIRE ASSOLUTAMENTE L'A CAPO SUGLI SMARTPHONE
-           ========================================================== */
+        /* MAGIA PER LA RIGA SINGOLA SU SMARTPHONE (Senza scroll orizzontale) */
         div[data-testid="stHorizontalBlock"] {
             flex-direction: row !important;
             flex-wrap: nowrap !important;
             align-items: center !important;
+            gap: 8px !important;
         }
-        
         div[data-testid="column"] {
             width: auto !important;
-            padding: 0px !important;
+            min-width: 0 !important;
+            padding: 0 !important;
         }
         
-        /* Colonna 1: Il quadratino di spunta (stretta e fissa) */
-        div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
-            flex: 0 0 40px !important;
+        /* Colonna 1: Pulsante Quadratino ⬜ (Largo giusto il necessario) */
+        div[data-testid="column"]:nth-child(1) {
+            flex: 0 0 35px !important; 
         }
         
-        /* Colonna 2: Il nome del prodotto (prende tutto lo spazio centrale disponibile) */
-        div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
+        /* Colonna 2: Testo del prodotto (Prende tutto lo spazio centrale rimasto) */
+        div[data-testid="column"]:nth-child(2):not(:last-child) {
             flex: 1 1 auto !important;
-            overflow: hidden !important;
         }
         
-        /* Colonna 3: La fotocamera (stretta, fissa e incollata a destra) */
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
+        /* Colonna 3: Fotocamera 📷 (A destra, piccola e compatta) */
+        div[data-testid="column"]:nth-child(3) {
             flex: 0 0 45px !important;
-            display: flex !important;
-            justify-content: flex-end !important;
+        }
+        
+        /* Regola per lo Storico in fondo (che ha solo 2 colonne) */
+        div[data-testid="column"]:nth-child(2):last-child {
+            flex: 1 1 auto !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -77,7 +69,7 @@ c.execute('''
 ''')
 conn.commit()
 
-# 3. INTERFACCIA DI INSERIMENTO RAPIDO
+# 3. INTERFACCIA DI INSERIMENTO
 with st.form(key="inserimento_rapido", clear_on_submit=True):
     nuovo_prodotto = st.text_input("➕ Aggiungi un elemento e premi Invio")
     foto_file = st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"])
@@ -89,7 +81,6 @@ if inviato:
         foto_bytes = None
         if foto_file is not None:
             image = Image.open(foto_file)
-            # Sistema le foto con sfondi trasparenti (spesso accade sugli iPhone)
             if image.mode in ("RGBA", "P"):
                 image = image.convert("RGB")
             img_byte_arr = io.BytesIO()
@@ -102,7 +93,7 @@ if inviato:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# 4. LISTA PRINCIPALE
+# 4. LISTA PRINCIPALE (Completamente in linea)
 prodotti_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", conn)
 
 if prodotti_df.empty:
@@ -111,8 +102,8 @@ else:
     st.caption(f"{len(prodotti_df)} elementi rimanenti")
     
     for index, row in prodotti_df.iterrows():
-        # Usiamo 3 colonne: i CSS sopra si assicureranno che restino tutte e 3 sulla stessa riga!
-        col_spunta, col_testo, col_foto = st.columns([1, 6, 1])
+        # Creiamo 3 colonne: il CSS le terrà bloccate sulla stessa riga
+        col_spunta, col_testo, col_foto = st.columns([1, 1, 1]) 
         
         with col_spunta:
             if st.button("⬜", key=f"check_{row['id']}"):
@@ -121,7 +112,7 @@ else:
                 st.rerun()
                 
         with col_testo:
-            st.markdown(f"<p style='font-size:17px; font-weight:500;'>{row['prodotto']}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size:17px; font-weight:500; padding-top:4px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
             
         with col_foto:
             if row['foto']:
@@ -139,7 +130,7 @@ if storico_df.empty:
     st.caption("Nessun elemento nello storico.")
 else:
     for index, row in storico_df.iterrows():
-        col_ripristina, col_testo_spuntato = st.columns([1, 7])
+        col_ripristina, col_testo_spuntato = st.columns([1, 1])
         
         with col_ripristina:
             if st.button("🔄", key=f"uncheck_{row['id']}"):
@@ -148,7 +139,7 @@ else:
                 st.rerun()
                 
         with col_testo_spuntato:
-            st.markdown(f"<p style='font-size:15px; text-decoration: line-through; color: #888888;'>{row['prodotto']}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='font-size:15px; text-decoration: line-through; color: #888888; padding-top:5px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
