@@ -24,13 +24,22 @@ c.execute('''
 ''')
 conn.commit()
 
-# 3. FUNZIONE DI INSERIMENTO PULITA (Evita i loop di doppioni)
-def inserisci_e_pulisci():
-    # Recuperiamo il testo scritto dall'utente
-    testo = st.session_state["nuovo_elemento"].strip()
-    foto_file = st.session_state["nuova_foto"]
-    
-    if testo:
+# 3. TRUCCO PER PULIRE IL CAMPO DOPO L'INVIO
+if "contatore_invii" not in st.session_state:
+    st.session_state["contatore_invii"] = 0
+
+# Generiamo una chiave unica che cambia ogni volta che inserisci un prodotto
+chiave_testo = f"prodotto_{st.session_state['contatore_invii']}"
+chiave_foto = f"foto_{st.session_state['contatore_invii']}"
+
+# Interfaccia di inserimento sempre aperta in alto (senza macro-form bloccanti)
+nuovo_prodotto = st.text_input("➕ Aggiungi un elemento e premi Invio", key=chiave_testo)
+foto_file = st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"], key=chiave_foto, label_visibility="collapsed")
+
+# Se l'utente preme il pulsante visibile o preme Invio sulla tastiera
+if st.button("Inserisci in lista") or (nuovo_prodotto and nuovo_prodotto.strip() != ""):
+    testo_pulito = nuovo_prodotto.strip()
+    if testo_pulito:
         foto_bytes = None
         if foto_file is not None:
             image = Image.open(foto_file)
@@ -38,38 +47,28 @@ def inserisci_e_pulisci():
             image.save(img_byte_arr, format='JPEG', quality=60)
             foto_bytes = img_byte_arr.getvalue()
         
-        # Inseriamo nel database UN SOLA VOLTA
+        # Inserimento singolo nel database
         c.execute(
             "INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)",
-            (testo, "", foto_bytes)
+            (testo_pulito, "", foto_bytes)
         )
         conn.commit()
         
-        # Svuotiamo i campi nella memoria di Streamlit prima del ricaricamento
-        st.session_state["nuovo_elemento"] = ""
-        st.session_state["nuova_foto"] = None
-
-# 4. INTERFACCIA DI INSERIMENTO RAPIDA (Dentro un form nativo)
-with st.form(key="modulo_inserimento", clear_on_submit=True):
-    # La casella di testo invia i dati direttamente quando premi Invio sulla tastiera del telefono
-    st.text_input("➕ Aggiungi un elemento e premi Invio", key="nuovo_elemento")
-    st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"], key="nuova_foto", label_visibility="collapsed")
-    
-    # Questo bottone nascosto serve a Streamlit per far funzionare il tasto Invio della tastiera
-    st.form_submit_button(label="Aggiungi", on_click=inserisci_e_pulisci)
+        # Facciamo scattare il contatore: questo resetta all'istante i campi di testo in alto!
+        st.session_state["contatore_invii"] += 1
+        st.rerun()
 
 st.markdown("---")
 
-# 5. LISTA PRINCIPALE: DA COMPRARE (Stile compatto Alexa)
+# 4. LISTA PRINCIPALE: DA COMPRARE (Stile compatto Alexa)
 prodotti_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC", conn)
 
-if prodotti_df.empty:
+if productos_vuoto := prodotti_df.empty:
     st.info("Nessun elemento rimanente. La lista è vuota!")
 else:
     st.caption(f"{len(prodotti_df)} elementi rimanenti")
     
     for index, row in prodotti_df.iterrows():
-        # Riga compatta
         col_spunta, col_testo, col_foto = st.columns([0.15, 0.65, 0.20])
         
         with col_spunta:
@@ -89,7 +88,7 @@ else:
         
         st.markdown("<hr style='margin:2px 0px; border-color:#eeeeee;'>", unsafe_allow_html=True)
 
-# 6. STORICO: ELEMENTI GIÀ PRESI
+# 5. STORICO: ELEMENTI GIÀ PRESI
 st.markdown("### 📋 Elementi già presi")
 storico_df = pd.read_sql_query("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 20", conn)
 
@@ -108,7 +107,7 @@ else:
         with col_testo_spuntato:
             st.markdown(f"<p style='font-size:16px; text-decoration: line-through; color: gray; margin:0; padding-top:5px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
 
-# 7. PULIZIA TOTALE DELLO STORICO (E svuota i doppioni vecchi)
+# 6. PULIZIA TOTALE DELLO STORICO
 st.markdown("---")
 if st.button("🗑️ Cancella definitivamente lo storico"):
     c.execute("DELETE FROM lista_spesa WHERE preso = 1")
