@@ -7,6 +7,7 @@ from sqlalchemy import text
 # 1. CONFIGURAZIONE PAGINA
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 
+# CSS: Griglia perfetta e ottimizzata per i bottoni rapidi
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; max-width: 100% !important; overflow-x: hidden !important; }
@@ -14,6 +15,7 @@ st.markdown("""
         hr { margin: 4px 0px !important; border-color: rgba(128, 128, 128, 0.2) !important; }
         [data-testid="stForm"] { border: none !important; padding: 0 !important; }
         
+        /* Griglia fissa a 3 colonne */
         [data-testid="stHorizontalBlock"] {
             display: grid !important;
             grid-template-columns: 40px 1fr 50px !important;
@@ -24,9 +26,9 @@ st.markdown("""
         
         [data-testid="column"] { width: 100% !important; min-width: 0 !important; padding: 0 !important; }
 
-        [data-testid="stHorizontalBlock"] .stButton > button, 
-        [data-testid="stHorizontalBlock"] [data-testid="stPopover"] > button {
-            width: 35px !important; height: 35px !important; padding: 0 !important; margin: 0 auto !important;
+        /* Uniforma tutti i bottoni della griglia (sia spunta che fotocamera) */
+        [data-testid="stHorizontalBlock"] .stButton > button {
+            width: 38px !important; height: 35px !important; padding: 0 !important; margin: 0 auto !important;
             display: flex !important; align-items: center !important; justify-content: center !important;
         }
         
@@ -38,6 +40,18 @@ st.title("🛒 La Nostra Spesa")
 
 # 2. CONNESSIONE AL DATABASE CLOUD SUPABASE
 conn = st.connection("supabase", type="sql", url=st.secrets["DB_URL"])
+
+# --- FUNZIONE COMPLEMENTARE: MOSTRA FOTO ON-DEMAND (Scarica solo quando clicchi) ---
+@st.dialog("📷 Foto Prodotto")
+def mostra_foto_popup(foto_id):
+    with conn.session as s:
+        # Scarica solo ed esclusivamente la foto cliccata
+        blob = s.execute(text("SELECT foto FROM lista_spesa WHERE id = :id"), {"id": foto_id}).scalar()
+    if blob:
+        image = Image.open(io.BytesIO(blob))
+        st.image(image, use_container_width=True)
+    else:
+        st.error("Impossibile caricare la foto.")
 
 # 3. INTERFACCIA DI INSERIMENTO
 with st.form(key="inserimento_rapido", clear_on_submit=True):
@@ -68,16 +82,19 @@ if inviato:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# --- LETTURA DATI DIRETTA (Senza blocchi di memoria) ---
+# 4. LETTURA DATI ULTRA-RAPIDA (Non scarica le foto, verifica solo se esistono con 'ha_foto')
 with conn.session as s:
-    risultati_prodotti = s.execute(text("SELECT * FROM lista_spesa WHERE preso = 0 ORDER BY id DESC")).mappings().all()
+    risultati_prodotti = s.execute(text(
+        "SELECT id, prodotto, categoria, preso, (foto IS NOT NULL) AS ha_foto FROM lista_spesa WHERE preso = 0 ORDER BY id DESC"
+    )).mappings().all()
     prodotti_df = pd.DataFrame(risultati_prodotti)
     
-    risultati_storico = s.execute(text("SELECT * FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 15")).mappings().all()
+    risultati_storico = s.execute(text(
+        "SELECT id, prodotto, categoria, preso FROM lista_spesa WHERE preso = 1 ORDER BY id DESC LIMIT 15"
+    )).mappings().all()
     storico_df = pd.DataFrame(risultati_storico)
-# --------------------------------------------------------
 
-# 4. LISTA PRINCIPALE
+# 5. VISUALIZZAZIONE LISTA PRINCIPALE
 if prodotti_df.empty:
     st.info("La lista è vuota!")
 else:
@@ -97,15 +114,14 @@ else:
             st.markdown(f"<div style='font-size: 16px; font-weight: 500; line-height: 1.2; word-wrap: break-word; padding-top: 2px;'>{row['prodotto']}</div>", unsafe_allow_html=True)
             
         with col_foto:
-            # Controllo di sicurezza per accertarsi che ci sia un'immagine
-            if row['foto'] is not None and len(row['foto']) > 0:
-                with st.popover("📷"):
-                    image = Image.open(io.BytesIO(row['foto']))
-                    st.image(image, use_container_width=True)
+            # Se la foto esiste nel server, mostriamo il bottoncino
+            if row['ha_foto']:
+                if st.button("📷", key=f"btn_foto_{row['id']}"):
+                    mostra_foto_popup(row['id']) # Attiva il popup e scarica la foto solo ora!
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
-# 5. STORICO
+# 6. STORICO
 st.markdown("### 📋 Elementi già presi")
 
 if storico_df.empty:
@@ -126,7 +142,7 @@ else:
         
         st.markdown("<hr>", unsafe_allow_html=True)
 
-# 6. PULIZIA TOTALE
+# 7. PULIZIA
 if not storico_df.empty:
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🗑️ Cancella definitivamente lo storico"):
