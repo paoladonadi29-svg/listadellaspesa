@@ -7,7 +7,7 @@ import io
 # 1. CONFIGURAZIONE PAGINA PER SMARTPHONE
 st.set_page_config(page_title="La Nostra Spesa", page_icon="🛒", layout="centered")
 
-# Trucco CSS per eliminare tutti gli spazi vuoti inutili di Streamlit e compattare lo schermo
+# Trucco CSS per eliminare spazi, margini e nascondere il bordo del modulo
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
@@ -15,6 +15,7 @@ st.markdown("""
         .stButton > button { padding: 2px 10px !important; font-size: 14px !important; height: auto !important; min-height: 0px !important; }
         hr { margin: 4px 0px !important; border-color: #dddddd !important; }
         p { margin: 0px !important; padding: 0px !important; }
+        [data-testid="stForm"] { border: none !important; padding: 0 !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -35,17 +36,17 @@ c.execute('''
 ''')
 conn.commit()
 
-# 3. INTERFACCIA DI INSERIMENTO
-if "contatore_invii" not in st.session_state:
-    st.session_state["contatore_invii"] = 0
+# 3. INTERFACCIA DI INSERIMENTO: MODULO NATIVO
+# "clear_on_submit=True" svuota la casella di testo e la foto automaticamente senza errori
+with st.form(key="inserimento_rapido", clear_on_submit=True):
+    nuovo_prodotto = st.text_input("➕ Aggiungi un elemento e premi Invio")
+    foto_file = st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"])
+    
+    # Questo bottone fa funzionare nativamente il tasto "Invio" della tastiera
+    inviato = st.form_submit_button("Inserisci in lista")
 
-chiave_testo = f"prodotto_{st.session_state['contatore_invii']}"
-chiave_foto = f"foto_{st.session_state['contatore_invii']}"
-
-nuovo_prodotto = st.text_input("➕ Aggiungi un elemento e premi Invio", key=chiave_testo)
-foto_file = st.file_uploader("📷 Scatta o allega una foto (opzionale)", type=["png", "jpg", "jpeg"], key=chiave_foto, label_visibility="collapsed")
-
-if st.button("Inserisci in lista") or (nuovo_prodotto and nuovo_prodotto.strip() != ""):
+# Se premiamo il tasto o premiamo Invio dalla tastiera
+if inviato:
     testo_pulito = nuovo_prodotto.strip()
     if testo_pulito:
         foto_bytes = None
@@ -55,9 +56,9 @@ if st.button("Inserisci in lista") or (nuovo_prodotto and nuovo_prodotto.strip()
             image.save(img_byte_arr, format='JPEG', quality=60)
             foto_bytes = img_byte_arr.getvalue()
         
+        # Ora salva contemporaneamente sia il testo che la foto nel database!
         c.execute("INSERT INTO lista_spesa (prodotto, categoria, foto) VALUES (?, ?, ?)", (testo_pulito, "", foto_bytes))
         conn.commit()
-        st.session_state["contatore_invii"] += 1
         st.rerun()
 
 st.markdown("<hr>", unsafe_allow_html=True)
@@ -71,7 +72,6 @@ else:
     st.caption(f"{len(prodotti_df)} elementi rimanenti")
     
     for index, row in prodotti_df.iterrows():
-        # Colonne strettissime per far stare tutto su una riga sola sul telefono
         col_spunta, col_testo, col_foto = st.columns([0.12, 0.73, 0.15])
         
         with col_spunta:
@@ -81,10 +81,10 @@ else:
                 st.rerun()
                 
         with col_testo:
-            # Scritta a dimensione ridotta e allineata perfettamente al quadratino
             st.markdown(f"<p style='font-size:16px; font-weight:500; padding-top:4px;'>{row['prodotto']}</p>", unsafe_allow_html=True)
             
         with col_foto:
+            # L'icona compare SOLO se la foto è stata salvata correttamente
             if row['foto']:
                 with st.popover("📷"):
                     image = Image.open(io.BytesIO(row['foto']))
